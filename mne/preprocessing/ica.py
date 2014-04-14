@@ -135,6 +135,7 @@ class ICA(object):
         Arguments to send to the functional form.
         If empty and if fun='logcosh', fun_args will take value
         {'alpha' : 1.0}
+    method: {'fastica', 'cudaica'}
     verbose : bool, str, int, or None
         If not None, override default verbose level (see mne.verbose).
 
@@ -181,12 +182,18 @@ class ICA(object):
     def __init__(self, n_components, max_pca_components=100,
                  n_pca_components=64, noise_cov=None, random_state=None,
                  algorithm='parallel', fun='logcosh', fun_args=None,
-                 verbose=None):
+                 method='fastica', verbose=None):
 
         if not check_sklearn_version(min_version='0.12'):
             raise RuntimeError('the scikit-learn package (version >= 0.12)'
                                'is required for ICA')
-
+        if method == 'cudaica':
+            try:
+                import cudaica
+            except ImportError:
+                raise RuntimeError('cudaica method selected but no cudaica '
+                                   'module found. Cudaica >562 is needed '
+                                   'for this method to work')
         self.noise_cov = noise_cov
 
         if max_pca_components is not None and \
@@ -209,6 +216,7 @@ class ICA(object):
         self.algorithm = algorithm
         self.fun = fun
         self.fun_args = fun_args
+        self.method = method
         self.exclude = []
         self.info = None
 
@@ -227,6 +235,7 @@ class ICA(object):
               'no dimension reduction')
         if self.exclude:
             s += ', %i sources marked for exclusion' % len(self.exclude)
+        s += ', method: "%s"' % self.method
 
         return '<ICA  |  %s>' % s
 
@@ -1173,17 +1182,61 @@ class ICA(object):
             if self.n_pca_components > len(self.pca_components_):
                 self.n_pca_components = len(self.pca_components_)
 
-        # Take care of ICA
-        from sklearn.decomposition import FastICA  # to avoid strong dep.
-        ica = FastICA(algorithm=self.algorithm, fun=self.fun,
-                      fun_args=self.fun_args, whiten=False,
-                      random_state=self.random_state)
-        ica.fit(data[:, sel])
+        if self.method == 'fastica':
+            # Take care of ICA
+            from sklearn.decomposition import FastICA  # to avoid strong dep.
+            ica = FastICA(algorithm=self.algorithm, fun=self.fun,
+                          fun_args=self.fun_args, whiten=False,
+                          random_state=self.random_state)
+            ica.fit(data[:, sel])
+                    # get unmixing and add scaling
+            self.unmixing_matrix_ = \
+                getattr(ica, 'components_', 'unmixing_matrix_')
+            self.unmixing_matrix_ /= np.sqrt(exp_var[sel])[None, :]
+            self.mixing_matrix_ = linalg.pinv(self.unmixing_matrix_)
+        elif self.method == 'cudaica':
+            from .cudaica import (initDefaultConfig, setIntParameter,
+                                  setRealParameter,
+                                  setStringParameter, selectDevice,
+                                  checkDefaultConfig,
+                                  printConfig, transfer2DDataTo,
+                                  transferWeightsFrom,
+                                  preprocess, process, postprocess)
+            selectDevice(0, 0)
+            cfg = initDefaultConfig()
+            #Compulsory: set nchannels, nsamples
+            setIntParameter(cfg, 'nchannels', data[:, sel].shape[1])
+            setIntParameter(cfg, 'nsamples', data[:, sel].shape[0])
 
-        # get unmixing and add scaling
-        self.unmixing_matrix_ = getattr(ica, 'components_', 'unmixing_matrix_')
-        self.unmixing_matrix_ /= np.sqrt(exp_var[sel])[None, :]
-        self.mixing_matrix_ = linalg.pinv(self.unmixing_matrix_)
+            #Optional: other parameters
+            setRealParameter(cfg, 'lrate', 0.0001)
+            setRealParameter(cfg, 'nochange', 1e-6)
+            setIntParameter(cfg, 'maxsteps', 256)
+            setStringParameter(cfg, 'sphering', 'off')
+            if self.verbose is None or self.verbose is False:
+                setIntParameter(cfg, 'verbose', self.verbose)
+
+            #Compulsory: check configuration
+            checkDefaultConfig(cfg)
+
+            #Optional: print configuration to stdout
+            printConfig(cfg)
+
+            #transfer data
+            transfer2DDataTo(data[:, sel], cfg)
+
+            #preprocess
+            preprocess(cfg)
+
+            # Main function: ICA
+            process(cfg)
+
+            postprocess(cfg)
+
+            self.unmixing_matrix_ = transferWeightsFrom(cfg)
+            self.unmixing_matrix_ /= np.sqrt(exp_var[sel])[None, :]
+            self.mixing_matrix_ = linalg.pinv(self.unmixing_matrix_)
+
         self.current_fit = fit_type
 
     def _pick_sources(self, data, include, exclude):

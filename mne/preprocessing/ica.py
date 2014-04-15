@@ -1841,3 +1841,65 @@ def run_ica(raw, n_components, max_pca_components=100,
                       var_criterion=var_criterion,
                       add_nodes=add_nodes)
     return ica
+
+
+def get_entropy(data, nbins=None):
+    """Aux Function
+
+    Compute diferential entropy of data.
+
+    Parameters
+    ----------
+    data : A 2D ndarray of floating point values.
+
+
+    Returns
+    -------
+    H : The differential entropy of each row of data.
+    v : The variances of the entropy.
+    """
+    from scipy.stats import histogram as scihisto
+    nsignals, nsamples = data.shape
+    if nbins is None:
+        nbins = round(3 * np.log2(1 + nsamples / 10))
+    umax = np.max(data, 1)
+    umin = np.min(data, 1)
+    deltau = (umax-umin)/nbins
+    H = np.zeros((nsignals, 1))
+    v = np.zeros((nsignals, 1))
+    np.seterr(divide='ignore', invalid='ignore')
+    for i in range(nsignals):
+        prob, _, _, _ = scihisto(data[i, :], nbins)
+        prob = prob / nsamples
+        H[i] = -np.nansum(prob * np.log(prob))
+        v[i] = np.nansum(prob * np.log(prob) ** 2) - H[i] ** 2
+        H[i] += (nbins - 1) / (2 * nsamples) + np.log(deltau[i])
+    np.seterr(divide='warn', invalid='warn')
+    return H, v
+
+
+def get_mir_raw(ica, raw):
+    """Aux Function
+
+    Compute Mutual Information Reduction index.
+
+    Parameters
+    ----------
+    ica : instance of ICA
+    raw : corresponding instance of RAW
+
+
+    Returns
+    -------
+    mir : The Mutual Information Reduction index
+    v : Variance of MIR estimate
+    """
+    hsig, vsig = get_entropy(raw)
+    hsrc, vsrc = get_entropy(ica.get_sources_raw(raw))
+
+    mir = sum(np.log(abs(np.linalg.linalg.eig(ica.unmixing_matrix_)))) + \
+        sum(hsig) - sum(hsrc)
+
+    v = (sum(vsrc) + sum(vsig)) / raw.n_times
+
+    return mir, v

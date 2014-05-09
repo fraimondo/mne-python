@@ -1214,7 +1214,7 @@ class ICA(object):
             setIntParameter(cfg, 'maxsteps', 256)
             setStringParameter(cfg, 'sphering', 'off')
             if self.verbose is None or self.verbose is False:
-                setIntParameter(cfg, 'verbose', self.verbose)
+                setIntParameter(cfg, 'verbose', False)
 
             #Compulsory: check configuration
             checkDefaultConfig(cfg)

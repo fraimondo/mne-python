@@ -1851,7 +1851,6 @@ def get_entropy(data, nbins=None):
     ----------
     data : A 2D ndarray of floating point values.
 
-
     Returns
     -------
     H : The differential entropy of each row of data.
@@ -1887,18 +1886,17 @@ def get_mir_raw(ica, raw):
     ica : instance of ICA
     raw : corresponding instance of RAW
 
-
     Returns
     -------
     mir : The Mutual Information Reduction index
     v : Variance of MIR estimate
     """
-    hsig, vsig = get_entropy(raw)
+    hsig, vsig = get_entropy(raw[:][0])
     hsrc, vsrc = get_entropy(ica.get_sources_raw(raw))
+    eig, eiv = np.linalg.linalg.eig(ica.unmixing_matrix_)
 
-    mir = sum(np.log(abs(np.linalg.linalg.eig(ica.unmixing_matrix_)))) + \
-        sum(hsig) - sum(hsrc)
+    mir = np.sum(np.log(np.abs(eig))) + np.sum(hsig) - np.sum(hsrc)
 
-    v = (sum(vsrc) + sum(vsig)) / raw.n_times
+    v = (np.sum(vsrc) + np.sum(vsig)) / raw.n_times
 
     return mir, v

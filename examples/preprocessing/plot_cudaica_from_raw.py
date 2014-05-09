@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 
 import mne
 from mne.fiff import Raw
-from mne.preprocessing.ica import ICA
+from mne.preprocessing.ica import ICA, get_mir_raw
 from mne.datasets import sample
 from mne.filter import band_pass_filter
 
@@ -47,7 +47,7 @@ picks = mne.fiff.pick_types(raw.info, meg=True, eeg=False, eog=False,
 # between 0 and 1 to select n_components based on the percentage of
 # variance explained by the PCA components.
 
-ica = ICA(n_components=0.99, max_pca_components=None,
+ica = ICA(n_components=1.0, max_pca_components=None,
           random_state=0, method='cudaica', verbose=True)
 
 # Also we decide to use all PCA components before mixing back to sensor space.
@@ -60,6 +60,7 @@ ica.n_pca_components = 1.0
 # decompose sources for raw data using each third sample.
 ica.decompose_raw(raw, picks=picks, decim=3)
 print(ica)
+print("MIR=>", get_mir_raw(ica, raw))
 
 # plot reasonable time window for inspection
 start_plot, stop_plot = 100., 103.

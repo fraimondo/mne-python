@@ -1214,7 +1214,7 @@ class ICA(object):
             setIntParameter(cfg, 'maxsteps', 256)
             setStringParameter(cfg, 'sphering', 'off')
             if self.verbose is None or self.verbose is False:
-                setIntParameter(cfg, 'verbose', False)
+                setIntParameter(cfg, 'verbose', self.verbose)
 
             #Compulsory: check configuration
             checkDefaultConfig(cfg)
@@ -1898,5 +1898,6 @@ def get_mir_raw(ica, raw):
     mir = np.sum(np.log(np.abs(eig))) + np.sum(hsig) - np.sum(hsrc)
 
     v = (np.sum(vsrc) + np.sum(vsig)) / raw.n_times
+
 
     return mir, v

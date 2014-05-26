@@ -1113,6 +1113,10 @@ class ICA(object):
 
     def _pre_whiten(self, data, info, picks):
         """Aux function"""
+        if self.method == 'cudaica':
+            print 'No Pre Whitener'
+            return data, np.ones(data.shape[0])
+
         info = pick_info(deepcopy(info), picks)
         if self.noise_cov is None:  # use standardization as whitener
             # Scale (z-score) the data by channel type
@@ -1138,6 +1142,112 @@ class ICA(object):
             pre_whitener = self._pre_whitener
 
         return data, pre_whitener
+
+    def _decompose_preprocess(self, data, max_pca_components, fit_type):
+        if self.method == 'fastica':
+            """Aux function """
+            from sklearn.decomposition import RandomizedPCA
+
+            # XXX fix copy==True later. Bug in sklearn, see PR #2273
+            pca = RandomizedPCA(n_components=max_pca_components, whiten=True,
+                                copy=True)
+
+            if isinstance(self.n_components, float):
+                # compute full feature variance before doing PCA
+                full_var = np.var(data, axis=1).sum()
+
+            data = pca.fit_transform(data.T)
+
+            if isinstance(self.n_components, float):
+                logger.info('Selecting PCA components by explained variance.')
+                # compute eplained variance manually, cf. sklearn bug
+                # fixed in #2664
+                explained_variance_ratio_ = pca.explained_variance_ / full_var
+                n_components_ = np.sum(explained_variance_ratio_.cumsum()
+                                       <= self.n_components)
+                sel = slice(n_components_)
+            else:
+                logger.info('Selecting PCA components by number.')
+                if self.n_components is not None:  # normal n case
+                    sel = slice(self.n_components)
+                else:  # None case
+                    logger.info('Using all PCA components.')
+                    sel = slice(len(pca.components_))
+
+            # the things to store for PCA
+            self.pca_mean_ = pca.mean_
+            self.pca_components_ = pca.components_
+            # unwhiten pca components and put scaling in unmixintg matrix later.
+            self.pca_explained_variance_ = exp_var = pca.explained_variance_
+            self.pca_components_ *= np.sqrt(exp_var[:, None])
+            del pca
+            # update number of components
+            self.n_components_ = sel.stop
+            if self.n_pca_components is not None:
+                if self.n_pca_components > len(self.pca_components_):
+                    self.n_pca_components = len(self.pca_components_)
+
+            # Take care of ICA
+            from sklearn.decomposition import FastICA  # to avoid strong dep.
+            ica = FastICA(algorithm=self.algorithm, fun=self.fun,
+                          fun_args=self.fun_args, whiten=False,
+                          random_state=self.random_state)
+            ica.fit(data[:, sel])
+                    # get unmixing and add scaling
+            self.unmixing_matrix_ = \
+                getattr(ica, 'components_', 'unmixing_matrix_')
+            self.unmixing_matrix_ /= np.sqrt(exp_var[sel])[None, :]
+            self.mixing_matrix_ = linalg.pinv(self.unmixing_matrix_)
+        elif self.method == 'cudaica':
+            from .cudaica import (initDefaultConfig, setIntParameter,
+                                  setRealParameter,
+                                  setStringParameter, selectDevice,
+                                  checkDefaultConfig,
+                                  printConfig, transfer2DDataTo,
+                                  transferWeightsFrom,
+                                  transferSphereFrom,
+                                  preprocess, process, postprocess)
+            selectDevice(0, 0)
+            cfg = initDefaultConfig()
+            #Compulsory: set nchannels, nsamples
+            setIntParameter(cfg, 'nchannels', data.shape[0])
+            setIntParameter(cfg, 'nsamples', data.shape[1])
+            self.pca_mean_ = np.mean(data, axis=1)
+
+            #Optional: other parameters
+            setRealParameter(cfg, 'lrate', 0.001)
+            setRealParameter(cfg, 'nochange', 1e-6)
+            setIntParameter(cfg, 'maxsteps', 512)
+            setStringParameter(cfg, 'sphering', 'on')
+            if self.verbose is None or self.verbose is False:
+                setIntParameter(cfg, 'verbose', self.verbose)
+
+            #Compulsory: check configuration
+            checkDefaultConfig(cfg)
+
+            #Optional: print configuration to stdout
+            printConfig(cfg)
+
+            #transfer data
+            transfer2DDataTo(data, cfg)
+
+            #preprocess
+            preprocess(cfg)
+
+            # Main function: ICA
+            process(cfg)
+
+            postprocess(cfg)
+
+            self.pca_components_ = transferSphereFrom(cfg)
+            self.n_pca_components = self.pca_components_.shape[1]
+            self.unmixing_matrix_ = transferWeightsFrom(cfg)
+            self.n_components_ = self.unmixing_matrix_.shape[1]
+            # self.unmixing_matrix_ /= np.sqrt(exp_var[sel])[None, :]
+            self.mixing_matrix_ = linalg.pinv(self.unmixing_matrix_ *
+                                              self.pca_components_)
+
+        self.current_fit = fit_type
 
     def _decompose(self, data, max_pca_components, fit_type):
         """Aux function """
@@ -1201,6 +1311,7 @@ class ICA(object):
                                   checkDefaultConfig,
                                   printConfig, transfer2DDataTo,
                                   transferWeightsFrom,
+                                  transferSphereFrom,
                                   preprocess, process, postprocess)
             selectDevice(0, 0)
             cfg = initDefaultConfig()
@@ -1209,10 +1320,10 @@ class ICA(object):
             setIntParameter(cfg, 'nsamples', data[:, sel].shape[0])
 
             #Optional: other parameters
-            setRealParameter(cfg, 'lrate', 0.0001)
+            setRealParameter(cfg, 'lrate', 0.001)
             setRealParameter(cfg, 'nochange', 1e-6)
-            setIntParameter(cfg, 'maxsteps', 256)
-            setStringParameter(cfg, 'sphering', 'off')
+            setIntParameter(cfg, 'maxsteps', 512)
+            setStringParameter(cfg, 'sphering', 'on')
             if self.verbose is None or self.verbose is False:
                 setIntParameter(cfg, 'verbose', self.verbose)
 
@@ -1233,7 +1344,10 @@ class ICA(object):
 
             postprocess(cfg)
 
-            self.unmixing_matrix_ = transferWeightsFrom(cfg)
+            sph = transferSphereFrom(cfg)
+            wts = transferWeightsFrom(cfg)
+            # self.n_pca_components = self.pca_components_.shape[1]
+            self.unmixing_matrix_ = wts * sph
             self.unmixing_matrix_ /= np.sqrt(exp_var[sel])[None, :]
             self.mixing_matrix_ = linalg.pinv(self.unmixing_matrix_)
 

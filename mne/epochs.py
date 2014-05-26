@@ -1605,6 +1605,7 @@ class EpochsArray(Epochs):
         self._bad_dropped = True
 
         self.selection = np.arange(len(events))
+        # self.picks = list(range(len(self.info['ch_names'])))
         self.picks = None
         self.times = (np.arange(data.shape[-1], dtype=np.float) /
                                 info['sfreq'] + tmin)

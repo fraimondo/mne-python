@@ -61,6 +61,12 @@ Changelog
 
    - Add EpochsArray constructor for creating epochs from numpy arrays by `Denis Engemann`_ and `Federico Raimondo`_
 
+   - Add connector to FieldTrip realtime client by `Mainak Jas`_
+
+   - Add color and event_id with legend options in plot_events in viz.py by `Cathy Nangini`_
+
+   - Add `events_list` parameter to `mne.concatenate_raws` to concatenate events corresponding to runs by `Denis Engemann`_
+
 BUG
 ~~~
 
@@ -695,3 +701,5 @@ of commits):
 .. _Martin Billinger: https://github.com/kazemakase
 
 .. _Federico Raimondo: https://github.com/fraimondo
+
+.. _Cathy Nangini: https://github.com/KatiRG

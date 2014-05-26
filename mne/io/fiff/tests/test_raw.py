@@ -98,10 +98,13 @@ def test_rank_estimation():
     """Test raw rank estimation
     """
     raw = Raw(fif_fname)
-    n_meg = len(pick_types(raw.info, meg=True, eeg=False, exclude='bads'))
-    n_eeg = len(pick_types(raw.info, meg=False, eeg=True, exclude='bads'))
+    picks_meg = pick_types(raw.info, meg=True, eeg=False, exclude='bads')
+    n_meg = len(picks_meg)
+    picks_eeg = pick_types(raw.info, meg=False, eeg=True, exclude='bads')
+    n_eeg = len(picks_eeg)
     raw = Raw(fif_fname, preload=True)
     assert_array_equal(raw.estimate_rank(), n_meg + n_eeg)
+    assert_array_equal(raw.estimate_rank(picks=picks_eeg), n_eeg)
     raw = Raw(fif_fname, preload=False)
     raw.apply_proj()
     n_proj = len(raw.info['projs'])
@@ -163,7 +166,9 @@ def test_multiple_files():
     first_samps = [r.first_samp for r in raws]
 
     # test concatenation of split file
-    all_raw_1 = concatenate_raws(raws, preload=False)
+    assert_raises(ValueError, concatenate_raws, raws, True, events[1:])
+    all_raw_1, events1 = concatenate_raws(raws, preload=False,
+                                          events_list=events)
     assert_true(raw.first_samp == all_raw_1.first_samp)
     assert_true(raw.last_samp == all_raw_1.last_samp)
     assert_allclose(raw[:, :][0], all_raw_1[:, :][0])
@@ -172,9 +177,10 @@ def test_multiple_files():
     assert_allclose(raw[:, :][0], all_raw_2[:, :][0])
 
     # test proper event treatment for split files
-    events = concatenate_events(events, first_samps, last_samps)
-    events2 = find_events(all_raw_2, stim_channel='STI 014')
-    assert_array_equal(events, events2)
+    events2 = concatenate_events(events, first_samps, last_samps)
+    events3 = find_events(all_raw_2, stim_channel='STI 014')
+    assert_array_equal(events1, events2)
+    assert_array_equal(events1, events3)
 
     # test various methods of combining files
     raw = Raw(fif_fname, preload=True)

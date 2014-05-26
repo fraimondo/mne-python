@@ -35,6 +35,7 @@ from ..utils import (_check_fname, estimate_rank, _check_pandas_installed,
                      logger, verbose)
 from ..viz import plot_raw, plot_raw_psds, _mutable_defaults
 from ..externals.six import string_types
+from ..event import concatenate_events
 
 
 class _BaseRaw(ProjMixin, ContainsMixin, PickDropChannelsMixin):
@@ -929,7 +930,7 @@ class _BaseRaw(ProjMixin, ContainsMixin, PickDropChannelsMixin):
                               use_first_samp)
 
     def estimate_rank(self, tstart=0.0, tstop=30.0, tol=1e-4,
-                      return_singular=False):
+                      return_singular=False, picks=None):
         """Estimate rank of the raw data
 
         This function is meant to provide a reasonable estimate of the rank.
@@ -951,6 +952,9 @@ class _BaseRaw(ProjMixin, ContainsMixin, PickDropChannelsMixin):
         return_singular : bool
             If True, also return the singular values that were used
             to determine the rank.
+        picks : array_like of int, shape (n_selected_channels,)
+            The channels to be considered for rank estimation.
+            If None (default) meg and eeg channels are indcluded.
 
         Returns
         -------
@@ -977,8 +981,10 @@ class _BaseRaw(ProjMixin, ContainsMixin, PickDropChannelsMixin):
         else:
             stop = min(self.n_times - 1, self.time_as_index(tstop)[0])
         tslice = slice(start, stop + 1)
-        picks = pick_types(self.info, meg=True, eeg=True, ref_meg=False,
-                           exclude='bads')
+        if picks is None:
+            picks = pick_types(self.info, meg=True, eeg=True, ref_meg=False,
+                               exclude='bads')
+
         # ensure we don't get a view of data
         if len(picks) == 1:
             return 1.0, 1.0
@@ -1557,7 +1563,7 @@ def _check_raw_compatibility(raw):
         raw[0].orig_format = 'unknown'
 
 
-def concatenate_raws(raws, preload=None):
+def concatenate_raws(raws, preload=None, events_list=None):
     """Concatenate raw instances as if they were continuous. Note that raws[0]
     is modified in-place to achieve the concatenation.
 
@@ -1565,19 +1571,32 @@ def concatenate_raws(raws, preload=None):
     ----------
     raws : list
         list of Raw instances to concatenate (in order).
-
     preload : bool, or None
         If None, preload status is inferred using the preload status of the
         raw files passed in. True or False sets the resulting raw file to
         have or not have data preloaded.
+    events_list : None | list
+        The events to concatenate. Defaults to None.
 
     Returns
     -------
     raw : instance of Raw
         The result of the concatenation (first Raw instance passed in).
+    events : ndarray of int, shape (n events, 3)
+        The events. Only returned if `event_list` is not None.
     """
+    if events_list is not None:
+        if len(events_list) != len(raws):
+            raise ValueError('`raws` and `event_list` are required '
+                             'to be of the same length')
+        first, last = zip(*[(r.first_samp, r.last_samp) for r in raws])
+        events = concatenate_events(events_list, first, last)
     raws[0].append(raws[1:], preload)
-    return raws[0]
+
+    if events_list is None:
+        return raws[0]
+    else:
+        return raws[0], events
 
 
 def get_chpi_positions(raw, t_step=None):

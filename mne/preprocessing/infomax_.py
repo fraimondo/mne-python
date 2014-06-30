@@ -8,7 +8,7 @@ import math
 
 import numpy as np
 from scipy.stats import kurtosis
-
+import time
 from ..utils import logger, verbose, check_random_state
 
 
@@ -115,10 +115,12 @@ def infomax(data, weights=None, l_rate=None, block=None, w_change=1e-12,
 
     # for extended Infomax
     if extended is True:
-        signs = np.diag(-1. * np.ones(n_features))
+        nsub = default_nsub
+        tmpsigns = np.ones(n_features)
+        tmpsigns[0:nsub] = -1
+        signs = np.diag(tmpsigns)
         extblocks = 1
         signcount = 0
-        nsub = default_nsub
         if default_kurtsize < n_samples:
             kurtsize = default_kurtsize
         else:
@@ -130,10 +132,25 @@ def infomax(data, weights=None, l_rate=None, block=None, w_change=1e-12,
         old_kurt = np.zeros(n_features, dtype=np.float64)
         oldsigns = np.zeros((n_features, n_features))
 
+    logger.info('n_features %d' % n_features)
+    logger.info('n_samples %d' % n_samples)
+    logger.info('extblocks %d' % extblocks)
+    logger.info('l_rate %.16f ' % l_rate)
+    logger.info('block %d' % block)
+    logger.info('w_change %.16f' % w_change)
+    logger.info('max_iter %d' % max_iter)
+    logger.info('anneal_step %.16f ' % anneal_step)
+    logger.info('anneal_deg %.16f ' % anneal_deg)
+    logger.info('extmomentum %.16f ' % extmomentum)
+    logger.info('nsub %d' % nsub)
+    logger.info('pdfsize %d' % kurtsize)
+    logger.info('signsbias %.16f ' % signsbias)
+    logger.info('extended %d' % 1 if extended else 0)
     # trainings loop
     olddelta, oldchange = 1., 0.
     while step < max_iter:
-
+        if verbose:
+            startblock = time.time()
         # shuffle data at each step
         rng.seed(step)  # --> permutation is fixed but differs at each step
         permute = list(range(n_samples))
@@ -238,12 +255,19 @@ def infomax(data, weights=None, l_rate=None, block=None, w_change=1e-12,
                 count_small_angle += 1
                 if count_small_angle > default_nsmall_angle:
                     max_iter = step
-
             # apply stopping rule
             if step > 2 and change < w_change:
                 step = max_iter
             elif change > default_blowup:
                 l_rate *= default_blowup_fac
+
+            if verbose:
+                endblock = time.time()
+
+            logger.info('Step %d - change %.16f l_rate %.16f - angledelta %.16f'
+                        ' - step time %.2fs' %
+                        (step, change, l_rate, angledelta,
+                         (endblock - startblock)))
 
         # restart if weights blow up
         # (for lowering l_rate)
@@ -259,8 +283,9 @@ def infomax(data, weights=None, l_rate=None, block=None, w_change=1e-12,
 
             # for extended Infomax
             if extended:
-                signs = np.identity(n_features)
-                signs.flat[::nsub + 1] = -1
+                tmpsigns = np.ones(n_features)
+                tmpsigns[0:nsub] = -1
+                signs = np.diag(tmpsigns)
                 oldsigns = np.zeros((n_features, n_features))
 
             if l_rate > default_min_l_rate:

@@ -520,7 +520,11 @@ class ICA(ContainsMixin):
             self.unmixing_matrix_ = getattr(ica, 'components_',
                                             'unmixing_matrix_')
         elif self.method in ('infomax', 'extended-infomax'):
-            self.unmixing_matrix_ = infomax(data[:, sel], **self.fit_params)
+            if 'cuda' in self.fit_params and self.fit_params['cuda']:
+                import infomax_cuda_
+                self.unmixing_matrix_ = infomax_cuda_.infomax(data[:, sel], **self.fit_params)
+            else:
+                self.unmixing_matrix_ = infomax(data[:, sel], **self.fit_params)
         self.unmixing_matrix_ /= np.sqrt(exp_var[sel])[None, :]
         self.mixing_matrix_ = linalg.pinv(self.unmixing_matrix_)
         self.current_fit = fit_type

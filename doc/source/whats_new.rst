@@ -101,8 +101,9 @@ Changelog
 
    - Add computation of point spread and cross-talk functions for MNE type solutions by `Alex Gramfort`_ and `Olaf Hauk`_
 
-   - Add infomax and extended infomax ICA by `Denis Engemann`_, `Juergen Dammers`_ and `Lukas Breuer`_ 
+   - Add mask parameter to `plot_evoked_topomap` and `evoked.plot_topomap` by `Denis Engemann`_ and `Alex Gramfort`_
 
+   - Add infomax and extended infomax ICA by `Denis Engemann`_, `Juergen Dammers`_ and `Lukas Breuer`_ and `Federico Raimondo`_
 
 BUG
 ~~~
@@ -754,4 +755,6 @@ of commits):
 
 .. _Olaf Hauk: http://www.neuroscience.cam.ac.uk/directory/profile.php?olafhauk
 
-.. _Jukas Breuer: http://www.researchgate.net/profile/Lukas_Breuer
+.. _Lukas Breuer: http://www.researchgate.net/profile/Lukas_Breuer
+
+.. _Federico Raimondo: https://github.com/fraimondo

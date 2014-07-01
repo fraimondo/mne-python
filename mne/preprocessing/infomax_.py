@@ -14,7 +14,8 @@ from ..utils import logger, verbose, check_random_state
 
 @verbose
 def infomax(data, weights=None, l_rate=None, block=None, w_change=1e-12,
-            anneal_deg=60., anneal_step=0.9, extended=False, max_iter=200,
+            anneal_deg=60., anneal_step=0.9, extended=False, n_subgauss=1,
+            kurt_size=6000, ext_blocks=1, max_iter=200,
             random_state=None, verbose=None):
     """Run the (extended) Infomax ICA decomposition on raw data
 
@@ -48,10 +49,19 @@ def infomax(data, weights=None, l_rate=None, block=None, w_change=1e-12,
     extended : bool
         Wheather to use the extended infomax algorithm or not. Defaults to
         True.
+    n_subgauss : int
+        The number of subgaussian components. Only considered for extended
+        Infomax.
+    kurt_size : int
+        The window size for kurtosis estimation. Only considered for extended
+        Infomax.
+    ext_blocks : int
+        The number of blocks after which to recompute Kurtosis.
+        Only considered for extended Infomax.
     max_iter : int
         The maximum number of iterations. Defaults to 200.
     verbose : bool, str, int, or None
-        if not None, override default verbose level (see mne.verbose).
+        If not None, override default verbose level (see mne.verbose).
 
     Returns
     -------
@@ -61,23 +71,21 @@ def infomax(data, weights=None, l_rate=None, block=None, w_change=1e-12,
     rng = check_random_state(random_state)
 
     # define some default parameter
-    default_max_weight = 1e8
-    default_restart_fac = 0.9
-    default_min_l_rate = 1e-10
-    default_blowup = 1e4
-    default_blowup_fac = 0.5
-    default_nsmall_angle = 20
+    max_weight = 1e8
+    restart_fac = 0.9
+    min_l_rate = 1e-10
+    blowup = 1e4
+    blowup_fac = 0.5
+    n_small_angle = 20
     degconst = 180.0 / np.pi
 
     # for extended Infomax
-    if extended is True:
-        default_kurtsize = 6000
-        default_extmomentum = 0.5
-        default_signsbias = 0.02
-        default_signcount_threshold = 25
-        default_signcount_step = 2
-        default_nsub = 1
-
+    extmomentum = 0.5
+    signsbias = 0.02
+    signcount_threshold = 25
+    signcount_step = 2
+    if ext_blocks > 0:  # allow not to recompute kurtosis
+        n_subgauss = 1  # but initialize n_subgauss to 1 if you recompute
     # check data shape
     n_samples, n_features = data.shape
     n_features_square = n_features ** 2
@@ -112,29 +120,19 @@ def infomax(data, weights=None, l_rate=None, block=None, w_change=1e-12,
     count_small_angle = 0
     wts_blowup = False
     blockno = 0
+    signcount = 0
 
     # for extended Infomax
     if extended is True:
-        nsub = default_nsub
-        tmpsigns = np.ones(n_features)
-        tmpsigns[0:nsub] = -1
-        signs = np.diag(tmpsigns)
-        extblocks = 1
-        signcount = 0
-        if default_kurtsize < n_samples:
-            kurtsize = default_kurtsize
-        else:
-            kurtsize = n_samples
-        extmomentum = default_extmomentum
-        signsbias = default_signsbias
-        signcount_threshold = default_signcount_threshold
-        signcount_step = default_signcount_step
+        signs = np.identity(n_features)
+        signs.flat[slice(0, n_features * n_subgauss, n_features)]
+        kurt_size = min(kurt_size, n_samples)
         old_kurt = np.zeros(n_features, dtype=np.float64)
         oldsigns = np.zeros((n_features, n_features))
 
     logger.info('n_features %d' % n_features)
     logger.info('n_samples %d' % n_samples)
-    logger.info('extblocks %d' % extblocks)
+    logger.info('ext_blocks %d' % ext_blocks)
     logger.info('l_rate %.16f ' % l_rate)
     logger.info('block %d' % block)
     logger.info('w_change %.16f' % w_change)
@@ -142,15 +140,16 @@ def infomax(data, weights=None, l_rate=None, block=None, w_change=1e-12,
     logger.info('anneal_step %.16f ' % anneal_step)
     logger.info('anneal_deg %.16f ' % anneal_deg)
     logger.info('extmomentum %.16f ' % extmomentum)
-    logger.info('nsub %d' % nsub)
-    logger.info('pdfsize %d' % kurtsize)
+    logger.info('n_subgauss %d' % n_subgauss)
+    logger.info('kurt_size %d' % kurt_size)
     logger.info('signsbias %.16f ' % signsbias)
     logger.info('extended %d' % 1 if extended else 0)
     # trainings loop
+
+    # trainings loop
     olddelta, oldchange = 1., 0.
     while step < max_iter:
-        if verbose:
-            startblock = time.time()
+        startblock = time.time()
         # shuffle data at each step
         rng.seed(step)  # --> permutation is fixed but differs at each step
         permute = list(range(n_samples))
@@ -182,7 +181,7 @@ def infomax(data, weights=None, l_rate=None, block=None, w_change=1e-12,
 
             # check change limit
             max_weight_val = np.max(np.abs(weights))
-            if max_weight_val > default_max_weight:
+            if max_weight_val > max_weight:
                 wts_blowup = True
 
             blockno += 1
@@ -191,12 +190,11 @@ def infomax(data, weights=None, l_rate=None, block=None, w_change=1e-12,
 
             # ICA kurtosis estimation
             if extended is True:
+                n = np.fix(blockno / ext_blocks)
 
-                n = np.fix(blockno / extblocks)
-
-                if np.abs(n) * extblocks == blockno:
-                    if kurtsize < n_samples:
-                        rp = np.floor(rng.uniform(0, 1, kurtsize) *
+                if np.abs(n) * ext_blocks == blockno:
+                    if kurt_size < n_samples:
+                        rp = np.floor(rng.uniform(0, 1, kurt_size) *
                                       (n_samples - 1))
                         tpartact = np.dot(data[rp.astype(int), :], weights).T
                     else:
@@ -223,7 +221,7 @@ def infomax(data, weights=None, l_rate=None, block=None, w_change=1e-12,
                     oldsigns = signs
 
                     if signcount >= signcount_threshold:
-                        extblocks = np.fix(extblocks * signcount_step)
+                        ext_blocks = np.fix(ext_blocks * signcount_step)
                         signcount = 0
 
         # here we continue after the for
@@ -253,29 +251,26 @@ def infomax(data, weights=None, l_rate=None, block=None, w_change=1e-12,
                     olddelta = delta  # initialize
                     oldchange = change
                 count_small_angle += 1
-                if count_small_angle > default_nsmall_angle:
+                if count_small_angle > n_small_angle:
                     max_iter = step
+
             # apply stopping rule
             if step > 2 and change < w_change:
                 step = max_iter
-            elif change > default_blowup:
-                l_rate *= default_blowup_fac
-
-            if verbose:
-                endblock = time.time()
-
+            elif change > blowup:
+                l_rate *= blowup_fac
+            endblock = time.time()
             logger.info('Step %d - change %.16f l_rate %.16f - angledelta %.16f'
                         ' - step time %.2fs' %
                         (step, change, l_rate, angledelta,
                          (endblock - startblock)))
-
         # restart if weights blow up
         # (for lowering l_rate)
         else:
             step = 0  # start again
             wts_blowup = 0  # re-initialize variables
             blockno = 1
-            l_rate *= default_restart_fac  # with lower learning rate
+            l_rate *= restart_fac  # with lower learning rate
             weights = startweights.copy()
             oldweights = startweights.copy()
             olddelta = np.zeros((1, n_features_square), dtype=np.float64)
@@ -283,12 +278,11 @@ def infomax(data, weights=None, l_rate=None, block=None, w_change=1e-12,
 
             # for extended Infomax
             if extended:
-                tmpsigns = np.ones(n_features)
-                tmpsigns[0:nsub] = -1
-                signs = np.diag(tmpsigns)
+                signs = np.identity(n_features)
+                signs.flat[slice(0, n_features * n_subgauss, n_features)]
                 oldsigns = np.zeros((n_features, n_features))
 
-            if l_rate > default_min_l_rate:
+            if l_rate > min_l_rate:
                 if verbose:
                     logger.info('... lowering learning rate to %g'
                                 '\n... re-starting...' % l_rate)

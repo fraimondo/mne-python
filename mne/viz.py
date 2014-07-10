@@ -2120,15 +2120,20 @@ def plot_ica_components(ica, picks=None, ch_type='mag', res=500,
         title = 'ICA components'
     fig.suptitle(title)
 
-    if vmax is None:
+    if vmax is 'range':
         vrange = np.array([f(data) for f in (np.min, np.max)])
         vmax = max(abs(vrange))
+        vmin = -vmax
+    elif vmax is None:
+        vmin = None
+    else:
+        vmin = -vmax
 
     if merge_grads:
         from .layouts.layout import _merge_grad_data
     for ii, data_, ax in zip(picks, data, axes):
         data_ = _merge_grad_data(data_) if merge_grads else data_
-        plot_topomap(data_.flatten(), pos, vmax=vmax, vmin=-vmax,
+        plot_topomap(data_.flatten(), pos, vmax=vmax, vmin=vmin,
                      res=res, axis=ax)
         ax.set_title('IC #%03d' % ii, fontsize=12)
         ax.set_yticks([])
@@ -2139,13 +2144,22 @@ def plot_ica_components(ica, picks=None, ch_type='mag', res=500,
     fig.subplots_adjust(top=0.9)
     fig.canvas.draw()
     if colorbar:
-        vmax_ = normalize_colors(vmin=-vmax, vmax=vmax)
-        sm = plt.cm.ScalarMappable(cmap=cmap, norm=vmax_)
-        sm.set_array(np.linspace(-vmax, vmax))
-        fig.subplots_adjust(right=0.8)
-        cax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
-        fig.colorbar(sm, cax=cax)
-        cax.set_title('AU')
+        if vmax is None:
+            cax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
+            sm = plt.cm.ScalarMappable(cmap=cmap)
+            sm.set_array(np.linspace(-1, 1))
+            fig.subplots_adjust(right=0.8)
+            cbar = fig.colorbar(sm, cax=cax, ticks=[-1, 1])
+            cbar.ax.set_yticklabels(['-', '+'])
+            cax.set_title('AU')
+        else:
+            vmax_ = normalize_colors(vmin=vmin, vmax=vmax)
+            sm = plt.cm.ScalarMappable(cmap=cmap, norm=vmax_)
+            sm.set_array(np.linspace(vmin, vmax))
+            fig.subplots_adjust(right=0.8)
+            cax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
+            fig.colorbar(sm, cax=cax)
+            cax.set_title('AU')
 
     if show is True:
         plt.show()

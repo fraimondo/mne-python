@@ -2345,3 +2345,22 @@ def _band_pass_filter(ica, sources, target, l_freq, h_freq, verbose=None):
         raise ValueError('Must specify both pass bands')
 
     return sources, target
+
+
+@verbose
+def argsort_mean_variance(ica, inst, picks):
+    sources = ica.get_sources(inst)
+    if isinstance(inst, _BaseRaw):
+        sourcesdata = sources._data
+        rawdata = inst._data[picks, :]
+    elif isinstance(inst, _BaseEpochs):
+        sourcesdata = np.hstack(sources.get_data())
+        rawdata = np.hstack(inst.get_data()[:, picks, :])
+    else:
+        raise ValueError('Data input must be of Raw or Epochs '
+                         'type')
+    prewhite = np.dot(ica._pre_whitener.T, rawdata)
+    expl_var = np.sum(
+        np.dot(sourcesdata - np.expand_dims(np.mean(sourcesdata, 1), 1),
+              (prewhite - np.expand_dims(np.mean(prewhite, 1), 1)).T), 1)
+    return np.argsort(-np.abs(expl_var))

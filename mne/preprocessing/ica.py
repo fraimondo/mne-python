@@ -164,7 +164,7 @@ class ICA(ContainsMixin):
         np.random.RandomState to initialize the FastICA estimation.
         As the estimation is non-deterministic it can be useful to
         fix the seed to have reproducible results. Defaults to None.
-    method : {'fastica', 'infomax', 'extended-infomax'}
+    method : {'fastica', 'infomax', 'extended-infomax', 'cudaica'}
         The ICA method to use. Defaults to 'fastica'.
     fit_params : dict | None.
         Additional parameters passed to the ICA estimator chosen by `method`.
@@ -222,7 +222,7 @@ class ICA(ContainsMixin):
                  n_pca_components=None, noise_cov=None, random_state=None,
                  method='fastica', fit_params=None, max_iter=200,
                  verbose=None):  # noqa: D102
-        methods = ('fastica', 'infomax', 'extended-infomax')
+        methods = ('fastica', 'infomax', 'extended-infomax', 'cudaica')
         if method not in methods:
             raise ValueError('`method` must be "%s". You passed: "%s"' %
                              ('" or "'.join(methods), method))
@@ -261,6 +261,13 @@ class ICA(ContainsMixin):
                       'fun_args': None}
             fit_params.update(dict((k, v) for k, v in update.items() if k
                               not in fit_params))
+        elif method == 'cudaica':
+            try:
+                import cudaica
+            except ImportError:
+                raise RuntimeError('cudaica method selected but no cudaica '
+                                   'module found. Check '
+                                   'http://github.com/fraimondo/cudaica')
         elif method == 'infomax':
             fit_params.update({'extended': False})
         elif method == 'extended-infomax':
@@ -581,6 +588,46 @@ class ICA(ContainsMixin):
             self.unmixing_matrix_ = infomax(data[:, sel],
                                             random_state=random_state,
                                             **self.fit_params)
+        elif self.method == 'cudaica':
+            from .cudaica import (initDefaultConfig, setIntParameter,
+                                  setRealParameter,
+                                  setStringParameter, selectDevice,
+                                  checkDefaultConfig,
+                                  printConfig, transfer2DDataTo,
+                                  transferWeightsFrom,
+                                  preprocess, process, postprocess)
+            selectDevice(0, 0)
+            cfg = initDefaultConfig()
+            #Compulsory: set nchannels, nsamples
+            setIntParameter(cfg, 'nchannels', data[:, sel].shape[1])
+            setIntParameter(cfg, 'nsamples', data[:, sel].shape[0])
+
+            #Optional: other parameters
+            setRealParameter(cfg, 'lrate', 0.0001)
+            setRealParameter(cfg, 'nochange', 1e-6)
+            setIntParameter(cfg, 'maxsteps', 256)
+            setStringParameter(cfg, 'sphering', 'off')
+            if self.verbose is None or self.verbose is False:
+                setIntParameter(cfg, 'verbose', self.verbose)
+
+            #Compulsory: check configuration
+            checkDefaultConfig(cfg)
+
+            #Optional: print configuration to stdout
+            printConfig(cfg)
+
+            #transfer data
+            transfer2DDataTo(data[:, sel], cfg)
+
+            #preprocess
+            preprocess(cfg)
+
+            # Main function: ICA
+            process(cfg)
+
+            postprocess(cfg)
+
+            self.unmixing_matrix_ = transferWeightsFrom(cfg)
         self.unmixing_matrix_ /= np.sqrt(exp_var[sel])[None, :]
         self.mixing_matrix_ = linalg.pinv(self.unmixing_matrix_)
         self.current_fit = fit_type

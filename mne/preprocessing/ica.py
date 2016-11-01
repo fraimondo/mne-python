@@ -263,7 +263,7 @@ class ICA(ContainsMixin):
                               not in fit_params))
         elif method == 'cudaica':
             try:
-                import cudaica
+                from . import cudaica
             except ImportError:
                 raise RuntimeError('cudaica method selected but no cudaica '
                                    'module found. Check '
@@ -608,7 +608,7 @@ class ICA(ContainsMixin):
             setIntParameter(cfg, 'maxsteps', 256)
             setStringParameter(cfg, 'sphering', 'off')
             if self.verbose is None or self.verbose is False:
-                setIntParameter(cfg, 'verbose', self.verbose)
+                setIntParameter(cfg, 'verbose', 0)
 
             #Compulsory: check configuration
             checkDefaultConfig(cfg)

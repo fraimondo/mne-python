@@ -1127,11 +1127,9 @@ class AverageTFR(_BaseTFR):
 
     def _onselect(self, eclick, erelease, baseline, mode, layout):
         """Handle rubber band selector in channel tfr."""
-        import matplotlib.pyplot as plt
         from ..viz import plot_tfr_topomap
         if abs(eclick.x - erelease.x) < .1 or abs(eclick.y - erelease.y) < .1:
             return
-        plt.ion()  # turn interactive mode on
         tmin = round(min(eclick.xdata, erelease.xdata) / 1000., 5)  # ms to s
         tmax = round(max(eclick.xdata, erelease.xdata) / 1000., 5)
         fmin = round(min(eclick.ydata, erelease.ydata), 5)  # Hz
@@ -1160,7 +1158,7 @@ class AverageTFR(_BaseTFR):
         fig.suptitle('{0:.2f} s - {1:.2f} s, {2:.2f} Hz - {3:.2f} Hz'.format(
             tmin, tmax, fmin, fmax), y=0.04)
         for idx, ch_type in enumerate(types):
-            ax = plt.subplot(1, len(types), idx + 1)
+            ax = fig.add_subplot(1, len(types), idx + 1)
             plot_tfr_topomap(self, ch_type=ch_type, tmin=tmin, tmax=tmax,
                              fmin=fmin, fmax=fmax, layout=layout,
                              baseline=baseline, mode=mode, cmap=None,
@@ -1289,11 +1287,12 @@ class AverageTFR(_BaseTFR):
         return fig
 
     def plot_topomap(self, tmin=None, tmax=None, fmin=None, fmax=None,
-                     ch_type=None, baseline=None, mode='mean',
-                     layout=None, vmin=None, vmax=None, cmap=None,
-                     sensors=True, colorbar=True, unit=None, res=64, size=2,
+                     ch_type=None, baseline=None, mode='mean', layout=None,
+                     vmin=None, vmax=None, cmap=None, sensors=True,
+                     colorbar=True, unit=None, res=64, size=2,
                      cbar_fmt='%1.1e', show_names=False, title=None,
-                     axes=None, show=True, outlines='head', head_pos=None):
+                     axes=None, show=True, outlines='head', head_pos=None,
+                     contours=6):
         """Plot topographic maps of time-frequency intervals of TFR data.
 
         Parameters
@@ -1401,6 +1400,13 @@ class AverageTFR(_BaseTFR):
             the head circle. If dict, can have entries 'center' (tuple) and
             'scale' (tuple) for what the center and scale of the head should be
             relative to the electrode locations.
+        contours : int | array of float
+            The number of contour lines to draw. If 0, no contours will be
+            drawn. When an integer, matplotlib ticker locator is used to find
+            suitable values for the contour thresholds (may sometimes be
+            inaccurate, use array for accuracy). If an array, the values
+            represent the levels for the contours. If colorbar=True, the ticks
+            in colorbar correspond to the contour levels. Defaults to 6.
 
         Returns
         -------
@@ -1415,7 +1421,8 @@ class AverageTFR(_BaseTFR):
                                 unit=unit, res=res, size=size,
                                 cbar_fmt=cbar_fmt, show_names=show_names,
                                 title=title, axes=axes, show=show,
-                                outlines=outlines, head_pos=head_pos)
+                                outlines=outlines, head_pos=head_pos,
+                                contours=contours)
 
     def _check_compat(self, tfr):
         """Check that self and tfr have the same time-frequency ranges."""

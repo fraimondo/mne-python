@@ -35,7 +35,8 @@ from ..utils import (_check_fname, _check_pandas_installed, sizeof_fmt,
                      _check_pandas_index_arguments,
                      check_fname, _get_stim_channel,
                      logger, verbose, _time_mask, warn, SizeMixin,
-                     copy_function_doc_to_method_doc)
+                     copy_function_doc_to_method_doc,
+                     _check_preload)
 from ..viz import plot_raw, plot_raw_psd, plot_raw_psd_topo
 from ..defaults import _handle_default
 from ..externals.six import string_types
@@ -1722,14 +1723,16 @@ class BaseRaw(ProjMixin, ContainsMixin, UpdateChannelsMixin,
     @copy_function_doc_to_method_doc(plot_raw)
     def plot(self, events=None, duration=10.0, start=0.0, n_channels=20,
              bgcolor='w', color=None, bad_color=(0.8, 0.8, 0.8),
-             event_color='cyan', scalings=None, remove_dc=True, order='type',
+             event_color='cyan', scalings=None, remove_dc=True, order=None,
              show_options=False, title=None, show=True, block=False,
              highpass=None, lowpass=None, filtorder=4, clipping=None,
-             show_first_samp=False):
+             show_first_samp=False, proj=True, group_by='type',
+             butterfly=False):
         return plot_raw(self, events, duration, start, n_channels, bgcolor,
                         color, bad_color, event_color, scalings, remove_dc,
                         order, show_options, title, show, block, highpass,
-                        lowpass, filtorder, clipping, show_first_samp)
+                        lowpass, filtorder, clipping, show_first_samp, proj,
+                        group_by, butterfly)
 
     @verbose
     @copy_function_doc_to_method_doc(plot_raw_psd)
@@ -1750,14 +1753,15 @@ class BaseRaw(ProjMixin, ContainsMixin, UpdateChannelsMixin,
     def plot_psd_topo(self, tmin=0., tmax=None, fmin=0, fmax=100, proj=False,
                       n_fft=2048, n_overlap=0, layout=None, color='w',
                       fig_facecolor='k', axis_facecolor='k', dB=True,
-                      show=True, block=False, n_jobs=1, verbose=None):
+                      show=True, block=False, n_jobs=1, axes=None,
+                      verbose=None):
         return plot_raw_psd_topo(self, tmin=tmin, tmax=tmax, fmin=fmin,
                                  fmax=fmax, proj=proj, n_fft=n_fft,
                                  n_overlap=n_overlap, layout=layout,
                                  color=color, fig_facecolor=fig_facecolor,
                                  axis_facecolor=axis_facecolor, dB=dB,
                                  show=show, block=block, n_jobs=n_jobs,
-                                 verbose=verbose)
+                                 axes=axes, verbose=verbose)
 
     def estimate_rank(self, tstart=0.0, tstop=30.0, tol=1e-4,
                       return_singular=False, picks=None, scalings='norm'):
@@ -2072,14 +2076,6 @@ class BaseRaw(ProjMixin, ContainsMixin, UpdateChannelsMixin,
         if buffer_size_sec is None:
             buffer_size_sec = self.info.get('buffer_size_sec', 1.)
         return int(np.ceil(buffer_size_sec * self.info['sfreq']))
-
-
-def _check_preload(raw, msg):
-    """Ensure data are preloaded."""
-    if not raw.preload:
-        raise RuntimeError(msg + ' requires raw data to be loaded. Use '
-                           'preload=True (or string) in the constructor or '
-                           'raw.load_data().')
 
 
 def _allocate_data(data, data_buffer, data_shape, dtype):

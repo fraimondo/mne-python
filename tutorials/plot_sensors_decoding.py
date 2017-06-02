@@ -1,7 +1,7 @@
 """
-==========================
-Decoding sensor space data
-==========================
+=================================
+Decoding sensor space data (MVPA)
+=================================
 
 Decoding, a.k.a MVPA or supervised machine learning applied to MEG
 data in sensor space. Here the classifier is applied to every time
@@ -22,6 +22,8 @@ from mne.decoding import (SlidingEstimator, GeneralizingEstimator,
 data_path = sample.data_path()
 
 plt.close('all')
+
+# sphinx_gallery_thumbnail_number = 4
 
 ###############################################################################
 # Set parameters
@@ -122,7 +124,7 @@ plt.show()
 
 # Plot the full matrix
 fig, ax = plt.subplots(1, 1)
-im = ax.imshow(scores, interpolation='nearest', origin='lower', cmap='RdBu_r',
+im = ax.imshow(scores, interpolation='lanczos', origin='lower', cmap='RdBu_r',
                extent=epochs.times[[0, -1, 0, -1]], vmin=0., vmax=1.)
 ax.set_xlabel('Testing Time (s)')
 ax.set_ylabel('Training Time (s)')

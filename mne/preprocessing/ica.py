@@ -1339,7 +1339,7 @@ class ICA(ContainsMixin):
         if self.noise_cov is None:  # revert standardization
             data *= self._pre_whitener
         else:
-            data = fast_dot(linalg.pinv(self._pre_whitener), data)
+            data = fast_dot(linalg.pinv(self._pre_whitener, cond=1e-14), data)
 
         return data
 
@@ -1363,10 +1363,11 @@ class ICA(ContainsMixin):
 
         try:
             _write_ica(fid, self)
+            end_file(fid)
         except Exception:
+            end_file(fid)
             os.remove(fname)
             raise
-        end_file(fid)
 
         return self
 
@@ -2362,8 +2363,12 @@ def corrmap(icas, template, threshold="auto", label=None, ch_type="eeg",
         Add markers for sensor locations to the plot. Accepts matplotlib plot
         format string (e.g., 'r+' for red plusses). If True, a circle will be
         used (via .add_artist). Defaults to True.
-    contours : int | False | None
+    contours : int | array of float
         The number of contour lines to draw. If 0, no contours will be drawn.
+        When an integer, matplotlib ticker locator is used to find suitable
+        values for the contour thresholds (may sometimes be inaccurate, use
+        array for accuracy). If an array, the values represent the levels for
+        the contours. Defaults to 6.
     cmap : None | matplotlib colormap
         Colormap for the plot. If ``None``, defaults to 'Reds_r' for norm data,
         otherwise to 'RdBu_r'.
